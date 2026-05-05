@@ -1,0 +1,100 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 0. Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return isSignedIn() && request.auth.token.email_verified == true; }
+    function isValidId(id) { return id is string && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isAdmin() { 
+      return isVerified() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ADMIN'; 
+    }
+    
+    function isBoutique() { 
+      return isVerified() && 
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'BOUTIQUE'; 
+    }
+
+    function isOwner(uid) { return isVerified() && request.auth.uid == uid; }
+
+    // --- Validation Blueprints ---
+    
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid == request.auth.uid &&
+             data.role in ['ADMIN', 'SUPERVISEUR', 'BOUTIQUE', 'LIVREUR', 'SUBSCRIBER'] &&
+             data.email is string && data.email.size() < 256;
+    }
+
+    function isValidSubscription(data) {
+      return data.keys().hasAll(['subscriberId', 'packId', 'totalPrice', 'remainingDebt', 'status']) &&
+             data.subscriberId is string && isValidId(data.subscriberId) &&
+             data.packId is string &&
+             data.totalPrice is number && data.totalPrice >= 0 &&
+             data.remainingDebt is number && data.remainingDebt >= 0 &&
+             data.status in ['ACTIVE', 'COMPLETED', 'DEBT_PENDING'];
+    }
+
+    function isValidPayment(data) {
+      return data.keys().hasAll(['subscriberId', 'amount', 'trancheNumber', 'paymentMethod', 'status']) &&
+             data.amount is number && data.amount > 0 &&
+             data.trancheNumber in [1, 2, 3, 4] &&
+             data.paymentMethod in ['MOBILE_MONEY', 'CARD'] &&
+             data.status in ['PENDING', 'COMPLETED', 'FAILED'];
+    }
+
+    // --- Rules ---
+
+    match /users/{userId} {
+      allow get: if isVerified() && (isOwner(userId) || isAdmin() || isBoutique());
+      allow list: if isVerified() && (isAdmin() || (isBoutique() && resource.data.shopId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.shopId));
+      
+      allow create: if isVerified() && isOwner(userId) && isValidUserProfile(incoming()) && 
+                    !incoming().keys().hasAny(['isVerifiedAdmin']);
+      
+      allow update: if isVerified() && (
+        (isOwner(userId) && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'nfcCardId', 'qrCode'])) ||
+        isAdmin()
+      );
+    }
+
+    match /shops/{shopId} {
+      allow read: if isVerified();
+      allow write: if isAdmin();
+    }
+
+    match /subscriptions/{subId} {
+      allow get: if isVerified() && (isOwner(existing().subscriberId) || isAdmin() || isBoutique());
+      allow list: if isVerified() && (isAdmin() || resource.data.subscriberId == request.auth.uid);
+      
+      allow create: if isVerified() && 
+                    isOwner(incoming().subscriberId) && 
+                    isValidSubscription(incoming()) &&
+                    // Enforce no active debt (requires prior sub collection check, usually handled via app logic + exists check)
+                    incoming().status == 'ACTIVE';
+      
+      allow update: if isVerified() && (
+        isAdmin() || 
+        (isBoutique() && incoming().diff(existing()).affectedKeys().hasOnly(['remainingDebt', 'status', 'tranchesPaid']))
+      );
+    }
+
+    match /subscriptions/{subId}/payments/{payId} {
+      allow read: if isVerified() && (isOwner(get(/databases/$(database)/documents/subscriptions/$(subId)).data.subscriberId) || isAdmin() || isBoutique());
+      
+      allow create: if isVerified() && 
+                    isValidPayment(incoming()) && 
+                    (isOwner(incoming().subscriberId) || isBoutique());
+    }
+  }
+}

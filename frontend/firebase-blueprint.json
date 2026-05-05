@@ -1,0 +1,86 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile with role-based attributes.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["ADMIN", "SUPERVISEUR", "BOUTIQUE", "LIVREUR", "SUBSCRIBER"] },
+        "shopId": { "type": "string" },
+        "nfcCardId": { "type": "string" },
+        "qrCode": { "type": "string" },
+        "currentPackId": { "type": "string" },
+        "cardExpiryDate": { "type": "string", "format": "date-time" },
+        "membershipStatus": { "type": "string", "enum": ["ACTIVE", "EXPIRED", "RENEWAL_PENDING"] },
+        "isDebtCleared": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Shop": {
+      "title": "Shop",
+      "description": "Boutique de proximité.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "location": { "type": "string" },
+        "managerId": { "type": "string" },
+        "stocks": { "type": "object" }
+      },
+      "required": ["id", "name"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "A payment tranche record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subscriberId": { "type": "string" },
+        "amount": { "type": "number" },
+        "trancheNumber": { "type": "number" },
+        "paymentMethod": { "type": "string", "enum": ["MOBILE_MONEY", "CARD"] },
+        "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["subscriberId", "amount", "trancheNumber", "paymentMethod"]
+    },
+    "Subscription": {
+       "title": "Subscription",
+       "description": "Active food ration subscription.",
+       "type": "object",
+       "properties": {
+         "id": { "type": "string" },
+         "subscriberId": { "type": "string" },
+         "packId": { "type": "string" },
+         "totalPrice": { "type": "number" },
+         "remainingDebt": { "type": "number" },
+         "tranchesPaid": { "type": "number" },
+         "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "DEBT_PENDING"] },
+         "startDate": { "type": "string", "format": "date-time" }
+       },
+       "required": ["subscriberId", "packId"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "UserProfile",
+      "description": "System users and subscribers."
+    },
+    "shops": {
+      "schema": "Shop",
+      "description": "Boutiques partners."
+    },
+    "subscriptions": {
+      "schema": "Subscription",
+      "description": "Active ration subscriptions."
+    },
+    "subscriptions/{subscriptionId}/payments": {
+      "schema": "Payment",
+      "description": "Payment history for a subscription."
+    }
+  }
+}
